@@ -1,0 +1,59 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/config/database.php';
+
+$command = $argv[1] ?? null;
+
+switch ($command) {
+    case 'serve':
+        $port = $argv[2] ?? 8000;
+        echo "Starting server on http://0.0.0.0:$port...\n";
+        echo "You can access this from your Android device using your computer's IP address.\n";
+        passthru("php -S 0.0.0.0:$port -t public");
+        break;
+
+    case 'migrate':
+    case 'migrate:fresh':
+        $env = parse_ini_file(__DIR__ . '/.env');
+        $host = $env['DB_HOST'];
+        $db   = $env['DB_NAME'];
+        $user = $env['DB_USER'];
+        $pass = $env['DB_PASS'];
+        $port = $env['DB_PORT'];
+
+        try {
+            // First connect without DB to ensure it exists
+            $pdoRaw = new PDO("mysql:host=$host;port=$port", $user, $pass);
+            $pdoRaw->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+            if ($command === 'migrate:fresh') {
+                echo "Dropping database $db...\n";
+                $pdoRaw->exec("DROP DATABASE IF EXISTS `$db` ");
+            }
+
+            echo "Ensuring database $db exists...\n";
+            $pdoRaw->exec("CREATE DATABASE IF NOT EXISTS `$db` ");
+            
+            // Now connect to the DB
+            $pdo = getDBConnection();
+            echo "Running migrations...\n";
+            
+            $files = glob(__DIR__ . '/database/migrations/*.sql');
+            sort($files);
+
+            foreach ($files as $file) {
+                $sql = file_get_contents($file);
+                $pdo->exec($sql);
+                echo "Executed: " . basename($file) . "\n";
+            }
+            echo "Migrations completed successfully.\n";
+        } catch (Exception $e) {
+            echo "Operation failed: " . $e->getMessage() . "\n";
+        }
+        break;
+
+    default:
+        echo "Usage: php api [serve|migrate|migrate:fresh]\n";
+        break;
+}
